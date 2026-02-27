@@ -1,5 +1,6 @@
+aiohttp
 requests
 pandas
 numpy
-python-dateutil
-pytz
+python-dotenv
+websockets
