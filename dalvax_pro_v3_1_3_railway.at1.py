@@ -425,6 +425,10 @@ class Config:
     # Unidade: PERCENT (ex.: 0.40 = 0.40%)
     MIN_EDGE_PCT = env_float("DALVAX_MIN_EDGE_PCT", 0.40)
 
+
+    # ── Signal inversion toggle (AT1)
+    # Se true: BUY vira SELL e SELL vira BUY (sem alterar análise técnica)
+    INVERT_SIGNAL = env_bool("DALVAX_INVERT_SIGNAL", False)
     # ── Risk/Reward — ATR dinâmico + fallback fixo ────────────────────────────
     # [RR-01] Modo de TP/SL: "atr_rr" (dinâmico) ou "fixed" (fallback)
     # atr_rr: SL = ATR(14) × ATR_MULTIPLIER_SL; TP = SL × MIN_RR
@@ -464,10 +468,6 @@ class Config:
     BE_ENABLED      = env_bool("DALVAX_BE_ENABLED",      False)
     BE_TRIGGER_PCT  = env_float("DALVAX_BE_TRIGGER_PCT", 0.006)   # 0.6% lucro ativa BE
     BE_OFFSET_PCT   = env_float("DALVAX_BE_OFFSET_PCT",  0.001)   # trava +0.1% acima da entry
-    # ── Signal inversion (experimento) ─────────────────────────────────────────
-    # Se DALVAX_INVERT_SIGNAL=true: BUY vira SELL e SELL vira BUY.
-    # Útil para testar hipótese de sinal invertido sem mexer na análise técnica.
-    INVERT_SIGNAL = env_bool("DALVAX_INVERT_SIGNAL", False)
 
     # ── Pump / Short Exhaustion Module (v3.1.2) ───────────────────────────────
     # Detecta ativos em pump extremo (alta 24h >= threshold) e aplica
@@ -2278,6 +2278,7 @@ class Bot:
         logger.info("═══════════════════════════════════════════════════════")
         logger.info("  DALVAX PRO v3.1.3 — Railway Deploy")
         logger.info("  run_id: %s", RUN_ID)
+        logger.info("  INVERT_SIGNAL: %s (env DALVAX_INVERT_SIGNAL)", str(self.config.INVERT_SIGNAL).lower())
         # [FIX-BOOT-01] Loga valor parsed E raw para detectar espaços invisíveis no Railway
         _raw_rt  = os.environ.get("DALVAX_REAL_TRADING_ENABLED", "(não definida)")
         _raw_dry = os.environ.get("DALVAX_DRY_RUN", "(não definida)")
@@ -2595,21 +2596,19 @@ class Bot:
                     if signal is None:
                         await asyncio.sleep(0.07)
                         continue
+                    # ── AT1: optional invert execution side (does NOT change TA) ──
+                    if getattr(self.config, "INVERT_SIGNAL", False) and signal in ("buy", "sell"):
+                        _orig = signal
+                        signal = ("sell" if signal == "buy" else "buy")
+                        logger.warning("⚠️ INVERT_SIGNAL ativo: %s → %s | %s", _orig.upper(), signal.upper(), instId)
+                        try:
+                            log_event("signal_inverted", instId=instId, orig=_orig, new=signal)
+                        except Exception:
+                            pass
                     # [FIX-P1-RSI] rsi_val e volume_mult agora chegam via sig_meta
                     _sig_rsi_val    = sig_meta.get("rsi_val", 0) if sig_meta else 0
                     _sig_vol_mult   = sig_meta.get("volume_mult", 1) if sig_meta else 1
                     _sig_c5         = sig_meta.get("c5") if sig_meta else None
-
-                    # ── DALVAX_INVERT_SIGNAL toggle ─────────────────────────
-                    if self.config.INVERT_SIGNAL:
-                        _orig_signal = signal
-                        if signal == "buy":
-                            signal = "sell"
-                        elif signal == "sell":
-                            signal = "buy"
-                        if signal != _orig_signal:
-                            logger.warning("[%s] 🔁 INVERT_SIGNAL ativo: %s → %s", instId, _orig_signal.upper(), signal.upper())
-                            log_event("signal_inverted", symbol=instId, from_signal=_orig_signal.upper(), to_signal=signal.upper())
 
 
 
